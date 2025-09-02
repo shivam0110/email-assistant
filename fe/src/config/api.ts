@@ -1,6 +1,6 @@
 // API Configuration
 export const API_CONFIG = {
-  baseUrl: import.meta.env.VITE_API_URL || 'http://localhost:4000',
+  baseUrl: import.meta.env.VITE_API_URL,
   endpoints: {
     // Chat endpoints
     chat: '/api/chat',
