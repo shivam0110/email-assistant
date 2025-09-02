@@ -1,6 +1,8 @@
 // API Configuration
+const VITE_API_URL = import.meta.env.VITE_API_URL;
+
 export const API_CONFIG = {
-  baseUrl: import.meta.env.VITE_API_URL,
+  baseUrl: VITE_API_URL,
   endpoints: {
     // Chat endpoints
     chat: '/api/chat',
@@ -32,6 +34,12 @@ export const getApiUrl = (endpoint: string): string => {
   }
   
   // For production, use full URLs
+  if (!API_CONFIG.baseUrl) {
+    console.error('Missing VITE_API_URL environment variable');
+    console.error('Available env vars:', Object.keys(import.meta.env));
+    throw new Error('VITE_API_URL environment variable is not set. Please configure it in your deployment environment.');
+  }
+  
   return `${API_CONFIG.baseUrl}${endpoint}`;
 };
 

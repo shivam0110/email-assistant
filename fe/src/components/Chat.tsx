@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useAuth } from '@clerk/clerk-react';
 import { EmailDraft } from './EmailDraft';
 import ApiKeySettings from './ApiKeySettings';
+import { getApiUrl } from '../config/api';
 
 interface ChatMessage {
   id: string;
@@ -109,7 +110,7 @@ const Chat: React.FC = () => {
   const startNewConversation = async () => {
     try {
       const token = await getToken();
-      const response = await fetch('/api/chat/new-conversation', {
+      const response = await fetch(getApiUrl('/api/chat/new-conversation'), {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -157,7 +158,7 @@ const Chat: React.FC = () => {
         if (storedSessionId) {
           try {
             const token = await getToken();
-            const response = await fetch('/api/chat/session-info', {
+            const response = await fetch(getApiUrl('/api/chat/session-info'), {
               headers: {
                 'Authorization': `Bearer ${token}`,
               },
@@ -204,7 +205,7 @@ const Chat: React.FC = () => {
   const loadDocuments = async () => {
     try {
       const token = await getToken();
-      const response = await fetch('/api/documents/list', {
+      const response = await fetch(getApiUrl('/api/documents/list'), {
         headers: {
           'Authorization': `Bearer ${token}`,
         },
@@ -240,7 +241,7 @@ const Chat: React.FC = () => {
       formData.append('userApiKey', userApiKey);
 
       const token = await getToken();
-      const response = await fetch('/api/documents/upload', {
+      const response = await fetch(getApiUrl('/api/documents/upload'), {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -301,7 +302,7 @@ const Chat: React.FC = () => {
         userApiKey: userApiKey // Always include since we've verified it exists
       };
 
-      const response = await fetch('/api/chat', {
+      const response = await fetch(getApiUrl('/api/chat'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

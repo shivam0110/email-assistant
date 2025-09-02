@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { getApiUrl } from '../config/api';
 
 interface ApiKeySettingsProps {
   isOpen: boolean;
@@ -37,7 +38,7 @@ const ApiKeySettings: React.FC<ApiKeySettingsProps> = ({ isOpen, onClose, onApiK
         
         // Test the API key with the backend
         try {
-          const response = await fetch('/api/chat/test-api-key', {
+          const response = await fetch(getApiUrl('/api/chat/test-api-key'), {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',

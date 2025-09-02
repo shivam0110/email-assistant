@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useAuth } from '@clerk/clerk-react';
+import { getApiUrl } from '../config/api';
 
 interface EmailDraft {
   subject: string;
@@ -50,7 +51,7 @@ export const EmailDraft: React.FC<EmailDraftProps> = ({ isOpen, onClose, initial
         requestBody.userApiKey = userApiKey;
       }
 
-      const response = await fetch('/api/email/draft', {
+      const response = await fetch(getApiUrl('/api/email/draft'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -88,7 +89,7 @@ export const EmailDraft: React.FC<EmailDraftProps> = ({ isOpen, onClose, initial
 
     try {
       const token = await getToken();
-      const response = await fetch('/api/email/send', {
+      const response = await fetch(getApiUrl('/api/email/send'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -146,7 +147,7 @@ export const EmailDraft: React.FC<EmailDraftProps> = ({ isOpen, onClose, initial
         requestBody.userApiKey = userApiKey;
       }
 
-      const response = await fetch('/api/email/draft-and-send', {
+      const response = await fetch(getApiUrl('/api/email/draft-and-send'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
