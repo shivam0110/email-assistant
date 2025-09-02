@@ -222,12 +222,22 @@ const Chat: React.FC = () => {
     const file = event.target.files?.[0];
     if (!file) return;
 
+    // Check if API key is available
+    if (!userApiKey) {
+      setError('OpenAI API key is required to upload documents. Please click the 🔑 API Key button to configure your key.');
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+      return;
+    }
+
     setIsUploading(true);
     setError(null);
 
     try {
       const formData = new FormData();
       formData.append('document', file);
+      formData.append('userApiKey', userApiKey);
 
       const token = await getToken();
       const response = await fetch('/api/documents/upload', {
@@ -265,6 +275,12 @@ const Chat: React.FC = () => {
 
   const sendMessage = async () => {
     if (!inputMessage.trim() || isLoading) return;
+    
+    // Block sending if no API key is provided
+    if (!userApiKey) {
+      setError('OpenAI API key is required to send messages. Please click the 🔑 API Key button to configure your key.');
+      return;
+    }
 
     const userMessage: ChatMessage = {
       id: Date.now().toString(),
@@ -280,12 +296,10 @@ const Chat: React.FC = () => {
 
     try {
       const token = await getToken();
-      const requestBody: any = { message: inputMessage };
-      
-      // Include user API key if available
-      if (userApiKey) {
-        requestBody.userApiKey = userApiKey;
-      }
+      const requestBody = { 
+        message: inputMessage,
+        userApiKey: userApiKey // Always include since we've verified it exists
+      };
 
       const response = await fetch('/api/chat', {
         method: 'POST',
@@ -326,6 +340,10 @@ const Chat: React.FC = () => {
   const handleKeyPress = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
+      if (!userApiKey) {
+        setError('OpenAI API key is required to send messages. Please click the 🔑 API Key button to configure your key.');
+        return;
+      }
       sendMessage();
     }
   };
@@ -403,42 +421,69 @@ const Chat: React.FC = () => {
       </div>
 
       {/* Document Status and API Key Status */}
-      {(uploadedDocuments.length > 0 || userApiKey) && (
-        <div className="bg-gradient-to-r from-secondary-50 to-accent-50 border-b border-secondary-100 p-4">
-          <div className="flex items-center justify-between">
-            {uploadedDocuments.length > 0 && (
+      <div className="border-b border-secondary-100">
+        {!userApiKey && (
+          <div className="bg-gradient-to-r from-amber-50 to-orange-50 border-b border-amber-200 p-4">
+            <div className="flex items-center justify-between">
               <div className="flex items-center space-x-3">
-                <span className="text-secondary-700 font-semibold flex items-center">
-                  📚 {uploadedDocuments.length} document{uploadedDocuments.length !== 1 ? 's' : ''} uploaded
-                </span>
-                <div className="flex flex-wrap gap-2">
-                  {uploadedDocuments.slice(0, 3).map((doc) => (
-                    <span
-                      key={doc.id}
-                      className="bg-white/80 text-secondary-700 px-3 py-1 rounded-full text-xs font-medium shadow-sm border border-secondary-200"
-                      title={`${doc.fileName} (${doc.totalChunks} chunks)`}
-                    >
-                      {doc.fileName.length > 20 ? `${doc.fileName.substring(0, 17)}...` : doc.fileName}
-                    </span>
-                  ))}
-                  {uploadedDocuments.length > 3 && (
-                    <span className="text-secondary-600 text-xs bg-white/60 px-2 py-1 rounded-full">
-                      +{uploadedDocuments.length - 3} more
-                    </span>
-                  )}
+                <div className="flex-shrink-0">
+                  <div className="w-8 h-8 bg-amber-100 rounded-full flex items-center justify-center">
+                    <span className="text-amber-600 text-lg">⚠️</span>
+                  </div>
+                </div>
+                <div>
+                  <h3 className="text-amber-800 font-semibold">OpenAI API Key Required</h3>
+                  <p className="text-amber-700 text-sm">Configure your API key to start chatting and using AI features.</p>
                 </div>
               </div>
-            )}
-            {userApiKey && (
-              <div className="flex items-center space-x-2">
-                <span className="bg-green-100 text-green-700 px-3 py-1 rounded-full text-xs font-medium border border-green-200 flex items-center">
-                  🔑 Using your API key
-                </span>
-              </div>
-            )}
+              <button
+                onClick={() => setIsApiKeySettingsOpen(true)}
+                className="bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 rounded-lg font-medium transition-colors flex items-center space-x-2"
+              >
+                <span>🔑</span>
+                <span>Configure API Key</span>
+              </button>
+            </div>
           </div>
-        </div>
-      )}
+        )}
+        
+        {(uploadedDocuments.length > 0 || userApiKey) && (
+          <div className="bg-gradient-to-r from-secondary-50 to-accent-50 p-4">
+            <div className="flex items-center justify-between">
+              {uploadedDocuments.length > 0 && (
+                <div className="flex items-center space-x-3">
+                  <span className="text-secondary-700 font-semibold flex items-center">
+                    📚 {uploadedDocuments.length} document{uploadedDocuments.length !== 1 ? 's' : ''} uploaded
+                  </span>
+                  <div className="flex flex-wrap gap-2">
+                    {uploadedDocuments.slice(0, 3).map((doc) => (
+                      <span
+                        key={doc.id}
+                        className="bg-white/80 text-secondary-700 px-3 py-1 rounded-full text-xs font-medium shadow-sm border border-secondary-200"
+                        title={`${doc.fileName} (${doc.totalChunks} chunks)`}
+                      >
+                        {doc.fileName.length > 20 ? `${doc.fileName.substring(0, 17)}...` : doc.fileName}
+                      </span>
+                    ))}
+                    {uploadedDocuments.length > 3 && (
+                      <span className="text-secondary-600 text-xs bg-white/60 px-2 py-1 rounded-full">
+                        +{uploadedDocuments.length - 3} more
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
+              {userApiKey && (
+                <div className="flex items-center space-x-2">
+                  <span className="bg-green-100 text-green-700 px-3 py-1 rounded-full text-xs font-medium border border-green-200 flex items-center">
+                    🔑 API key configured
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* Messages Container */}
       <div className="flex-1 overflow-y-auto p-6 space-y-4 min-h-0 bg-gradient-to-b from-gray-50 to-white">
@@ -527,17 +572,18 @@ const Chat: React.FC = () => {
         <div className="flex space-x-3 items-center">
           <button
             onClick={() => fileInputRef.current?.click()}
-            disabled={isUploading}
+            disabled={isUploading || !userApiKey}
             className="bg-gradient-to-r from-secondary to-secondary-600 text-white px-4 py-2 rounded-lg hover:from-secondary-600 hover:to-secondary-700 focus:outline-none focus:ring-2 focus:ring-secondary-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 font-medium shadow-md flex items-center space-x-2"
+            title={!userApiKey ? "Please configure your API key first" : (isUploading ? "Uploading..." : "Upload Document")}
           >
             <span>{isUploading ? '📤' : '📎'}</span>
             {/* <span>{isUploading ? 'Uploading...' : 'Upload Document'}</span> */}
           </button>
           <button
             onClick={handleOpenEmailDraft}
-            disabled={messages.length === 0}
+            disabled={messages.length === 0 || !userApiKey}
             className="bg-gradient-to-r from-blue-500 to-blue-600 text-white px-4 py-2 rounded-lg hover:from-blue-600 hover:to-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 font-medium shadow-md flex items-center space-x-2"
-            title="Generate email from conversation"
+            title={!userApiKey ? "Please configure your API key first" : "Generate email from conversation"}
           >
             <span>📧</span>
           </button>
@@ -545,15 +591,24 @@ const Chat: React.FC = () => {
             value={inputMessage}
             onChange={(e) => setInputMessage(e.target.value)}
             onKeyPress={handleKeyPress}
-            placeholder="Ask me anything about your documents... (Press Enter to send)"
-            className="flex-1 border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent resize-none bg-gray-50 focus:bg-white transition-colors"
+            placeholder={
+              userApiKey 
+                ? "Ask me anything about your documents... (Press Enter to send)"
+                : "Please configure your OpenAI API key first by clicking the 🔑 button above"
+            }
+            className={`flex-1 border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent resize-none transition-colors ${
+              userApiKey 
+                ? 'border-gray-300 bg-gray-50 focus:bg-white' 
+                : 'border-amber-300 bg-amber-50 cursor-not-allowed'
+            }`}
             rows={1}
-            disabled={isLoading}
+            disabled={isLoading || !userApiKey}
           />
           <button
             onClick={sendMessage}
-            disabled={!inputMessage.trim() || isLoading}
+            disabled={!inputMessage.trim() || isLoading || !userApiKey}
             className="bg-gradient-to-r from-primary to-primary-600 text-white px-6 py-2 rounded-lg hover:from-primary-600 hover:to-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 font-semibold shadow-md flex items-center space-x-2"
+            title={!userApiKey ? "Please configure your API key first" : "Send message"}
           >
             <span>Send</span>
             <span>→</span>

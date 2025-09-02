@@ -28,7 +28,6 @@ export interface ConversationSession {
 
 class VectorStoreService {
   private vectorStore: HNSWLib | null = null;
-  private embeddings: OpenAIEmbeddings;
   private isInitialized = false;
   private isInitializing = false;
   private initializationPromise: Promise<void> | null = null;
@@ -45,32 +44,25 @@ class VectorStoreService {
 
   constructor() {
     try {
-      // Only initialize embeddings if we have a system API key
-      // Otherwise, embeddings will be limited when users don't provide their own key
-      if (config.OPENAI_API_KEY) {
-        this.embeddings = new OpenAIEmbeddings({
-          openAIApiKey: config.OPENAI_API_KEY,
-          modelName: 'text-embedding-3-small', // Smaller, cost-effective embedding model
-          maxRetries: 3, // Add retry logic
-          timeout: 60000, // 60 second timeout
-        });
-      } else {
-        console.warn('⚠️  No system OpenAI API key configured. Document embeddings will require user-provided keys.');
-        // Create a placeholder embeddings instance
-        this.embeddings = new OpenAIEmbeddings({
-          openAIApiKey: 'placeholder-key',
-          modelName: 'text-embedding-3-small',
-          maxRetries: 3,
-          timeout: 60000,
-        });
-      }
-      
       // Start session cleanup interval
       this.startSessionCleanup();
     } catch (error) {
-      console.error('❌ Failed to initialize OpenAI embeddings:', error);
-      throw new Error('OpenAI embeddings initialization failed');
+      console.error('❌ Failed to initialize VectorStoreService:', error);
+      throw new Error('VectorStoreService initialization failed');
     }
+  }
+
+  private createEmbeddingsWithKey(apiKey: string): OpenAIEmbeddings {
+    if (!apiKey) {
+      throw new Error('OpenAI API key is required for document embeddings. Please provide your API key in settings.');
+    }
+
+    return new OpenAIEmbeddings({
+      apiKey: apiKey,
+      modelName: 'text-embedding-3-small',
+      maxRetries: 3,
+      timeout: 60000,
+    });
   }
 
   private startSessionCleanup(): void {
@@ -152,24 +144,16 @@ class VectorStoreService {
 
   private async _doInitialize(): Promise<void> {
     try {
-      // Initialize with a proper dummy document instead of empty string
-      const dummyText = 'email assistant';
-      this.vectorStore = await HNSWLib.fromTexts(
-        [dummyText],
-        [{ id: 'init' }],
-        this.embeddings
-      );
+      // Initialize with a proper dummy document - this will use a temporary key
+      // Real embeddings will be created per-request with user keys
+      console.warn('⚠️ Vector store initialized without embeddings. Search operations will require user API keys.');
       this.isInitialized = true;
-      console.log('✅ Vector store initialized');
+      console.log('✅ Vector store initialized (session management only)');
       
-      // Process any pending messages
+      // Process any pending messages (but they won't be embedded until user provides API key)
       if (this.pendingMessages.length > 0) {
-        console.log(`📦 Processing ${this.pendingMessages.length} pending messages`);
-        const messages = [...this.pendingMessages];
-        this.pendingMessages = [];
-        
-        // Process pending messages in background
-        this._processPendingMessages(messages);
+        console.log(`📦 ${this.pendingMessages.length} messages queued for embedding when user API key is provided`);
+        // Keep messages in pending state for now
       }
     } catch (error) {
       console.error('❌ Failed to initialize vector store:', error);
@@ -187,84 +171,128 @@ class VectorStoreService {
     });
   }
 
-  private async _addMessageToStore(message: ChatMessage): Promise<void> {
+  private async _addMessageToStore(message: ChatMessage, userApiKey?: string): Promise<void> {
     try {
-      // Validate message content before processing
-      if (!message.content || message.content.trim().length === 0) {
-        console.warn('⚠️ Skipping empty message content');
+      if (!userApiKey) {
+        // Store message in pending queue for when user provides API key
+        this.pendingMessages.push(message);
+        console.log('📝 Message queued for embedding when user API key is provided');
         return;
       }
 
-      // Create document from chat message
-      const doc = new Document({
+      if (!this.vectorStore) {
+        // Initialize vector store with user's API key
+        await this._initializeVectorStoreWithKey(userApiKey);
+      }
+
+      const document = new Document({
         pageContent: `${message.role}: ${message.content}`,
         metadata: {
           id: message.id,
           role: message.role,
-          timestamp: message.timestamp.toISOString(),
           userId: message.userId,
+          timestamp: message.timestamp.toISOString(),
         },
       });
 
-      // Add to vector store
-      await this.vectorStore!.addDocuments([doc]);
-      
-      // Also add to current conversation session
-      const session = this.getCurrentSession(message.userId);
-      session.messages.push(message);
-      this.updateSessionActivity(session);
-      
-      // Keep only recent messages in session
-      if (session.messages.length > this.MAX_RECENT_MESSAGES) {
-        session.messages = session.messages.slice(-this.MAX_RECENT_MESSAGES);
-      }
-      
-      console.log(`📝 Added message to vector store and session: ${message.id}`);
+      await this.vectorStore!.addDocuments([document]);
+      console.log(`✅ Added message to vector store: ${message.id}`);
     } catch (error) {
       console.error('❌ Failed to add message to vector store:', error);
-      // Don't throw error to avoid breaking the chat flow
+      throw error;
     }
   }
 
-  async addChatMessage(message: ChatMessage): Promise<void> {
-    // If not initialized, add to pending queue and trigger background initialization
-    if (!this.isInitialized) {
-      this.pendingMessages.push(message);
+  private async _initializeVectorStoreWithKey(userApiKey: string): Promise<void> {
+    try {
+      const embeddings = this.createEmbeddingsWithKey(userApiKey);
+      const dummyText = 'email assistant';
+      this.vectorStore = await HNSWLib.fromTexts(
+        [dummyText],
+        [{ id: 'init' }],
+        embeddings
+      );
       
-      // Start initialization in background if not already started
-      if (!this.isInitializing) {
-        this.initialize().catch(error => {
-          console.error('❌ Background vector store initialization failed:', error);
-        });
+      console.log('✅ Vector store initialized with user API key');
+      
+      // Process any pending messages
+      if (this.pendingMessages.length > 0) {
+        console.log(`📦 Processing ${this.pendingMessages.length} pending messages`);
+        const messages = [...this.pendingMessages];
+        this.pendingMessages = [];
+        
+        // Process pending messages with the user's API key
+        await Promise.all(
+          messages.map(message => this._addMessageToStore(message, userApiKey))
+        );
       }
-      
-      console.log(`📋 Queued message for later processing: ${message.id}`);
-      return; // Return immediately without waiting
+    } catch (error) {
+      console.error('❌ Failed to initialize vector store with user key:', error);
+      throw error;
+    }
+  }
+
+  async addChatMessage(message: ChatMessage, userApiKey?: string): Promise<void> {
+    // Also add to current conversation session
+    const session = this.getCurrentSession(message.userId);
+    session.messages.push(message);
+    this.updateSessionActivity(session);
+    
+    // Keep only recent messages in session
+    if (session.messages.length > this.MAX_RECENT_MESSAGES) {
+      session.messages = session.messages.slice(-this.MAX_RECENT_MESSAGES);
     }
 
-    // If initialized, process in background
-    this._addMessageToStore(message).catch(error => {
+    // If no user API key provided, just manage session without vector storage
+    if (!userApiKey) {
+      console.log(`📋 Added message to session (no vector storage): ${message.id}`);
+      return;
+    }
+
+    // Process in background for vector storage
+    this._addMessageToStore(message, userApiKey).catch(error => {
       console.error('❌ Failed to add message to vector store:', error);
     });
   }
 
   // Synchronous version for when we actually need to wait
-  async addChatMessageSync(message: ChatMessage): Promise<void> {
-    if (!this.isInitialized) {
-      await this.initialize();
+  async addChatMessageSync(message: ChatMessage, userApiKey?: string): Promise<void> {
+    // Also add to current conversation session
+    const session = this.getCurrentSession(message.userId);
+    session.messages.push(message);
+    this.updateSessionActivity(session);
+    
+    // Keep only recent messages in session
+    if (session.messages.length > this.MAX_RECENT_MESSAGES) {
+      session.messages = session.messages.slice(-this.MAX_RECENT_MESSAGES);
     }
-    return this._addMessageToStore(message);
+
+    if (!userApiKey) {
+      console.log(`📋 Added message to session sync (no vector storage): ${message.id}`);
+      return;
+    }
+
+    return this._addMessageToStore(message, userApiKey);
   }
 
   async searchRelevantHistory(
     query: string, 
     userId: string, 
+    userApiKey?: string,
     limit: number = 5
   ): Promise<Document[]> {
-    if (!this.isInitialized) {
-      // Don't wait for initialization during search, just return empty results
-      console.log('🔍 Vector store not initialized, returning empty search results');
+    if (!userApiKey) {
+      console.log('🔍 No user API key provided for search, returning empty results');
       return [];
+    }
+
+    if (!this.vectorStore) {
+      try {
+        await this._initializeVectorStoreWithKey(userApiKey);
+      } catch (error) {
+        console.error('❌ Failed to initialize vector store for search:', error);
+        return [];
+      }
     }
 
     // Validate query input
@@ -295,9 +323,9 @@ class VectorStoreService {
     }
   }
 
-  async getChatContext(query: string, userId: string): Promise<ChatContext> {
+  async getChatContext(query: string, userId: string, userApiKey?: string): Promise<ChatContext> {
     const [relevantHistory, recentMessages] = await Promise.all([
-      this.searchRelevantHistory(query, userId),
+      this.searchRelevantHistory(query, userId, userApiKey),
       this.getRecentMessages(userId)
     ]);
     
@@ -365,9 +393,13 @@ class VectorStoreService {
   }
 
   // Add documents directly to the vector store
-  async addDocuments(documents: Document[]): Promise<void> {
-    if (!this.isInitialized) {
-      await this.initialize();
+  async addDocuments(documents: Document[], userApiKey: string): Promise<void> {
+    if (!userApiKey) {
+      throw new Error('OpenAI API key is required for document embeddings. Please provide your API key.');
+    }
+
+    if (!this.vectorStore) {
+      await this._initializeVectorStoreWithKey(userApiKey);
     }
 
     try {
@@ -383,11 +415,21 @@ class VectorStoreService {
   async searchRelevantDocuments(
     query: string, 
     userId: string, 
+    userApiKey?: string,
     limit: number = 5
   ): Promise<Document[]> {
-    if (!this.isInitialized) {
-      console.log('🔍 Vector store not initialized, returning empty search results');
+    if (!userApiKey) {
+      console.log('🔍 No user API key provided for document search, returning empty results');
       return [];
+    }
+
+    if (!this.vectorStore) {
+      try {
+        await this._initializeVectorStoreWithKey(userApiKey);
+      } catch (error) {
+        console.error('❌ Failed to initialize vector store for document search:', error);
+        return [];
+      }
     }
 
     if (!query || query.trim().length === 0) {

@@ -8,7 +8,7 @@ const router = Router();
 // Validation schemas
 const chatMessageSchema = z.object({
   message: z.string().min(1).max(1000),
-  userApiKey: z.string().optional(),
+  userApiKey: z.string().min(1, 'OpenAI API key is required'),
 });
 
 const testApiKeySchema = z.object({
@@ -18,6 +18,7 @@ const testApiKeySchema = z.object({
 const chatHistoryQuerySchema = z.object({
   query: z.string().optional(),
   limit: z.string().transform(Number).pipe(z.number().min(1).max(50)).optional(),
+  userApiKey: z.string().optional(),
 });
 
 // POST /api/chat - Send a chat message
@@ -78,19 +79,23 @@ router.get('/history', requireAuth(), async (req, res) => {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
-    const { query, limit } = chatHistoryQuerySchema.parse(req.query);
+    const { query, limit, userApiKey } = chatHistoryQuerySchema.parse(req.query);
 
-    const history = await chatService.getChatHistory(auth.userId, query);
+    const messages = await chatService.getChatHistory(
+      auth.userId,
+      query,
+      userApiKey
+    );
 
     res.json({
       success: true,
       data: {
-        messages: history.slice(0, limit || 20),
-        total: history.length,
+        messages: messages.slice(0, limit || 50),
+        hasMore: messages.length > (limit || 50),
       },
     });
 
-  } catch (error) {
+  } catch (error: any) {
     console.error('Chat history endpoint error:', error);
     
     if (error instanceof z.ZodError) {
@@ -174,28 +179,35 @@ router.get('/session-info', requireAuth(), async (req, res) => {
 // POST /api/chat/test-api-key - Test user's API key and trigger vector DB operations
 router.post('/test-api-key', async (req, res) => {
   try {
+    console.log('🔑 Testing API key...');
+    
     const { userApiKey } = testApiKeySchema.parse(req.body);
+    console.log('🔑 API key format validation passed');
 
     // Validate that the key looks like an OpenAI key
     if (!userApiKey || !userApiKey.startsWith('sk-')) {
+      console.log('❌ API key format invalid:', userApiKey?.substring(0, 10) + '...');
       return res.status(400).json({
         success: false,
-        error: 'Invalid API key format',
+        error: 'Invalid API key format. API key should start with "sk-"',
       });
     }
 
+    console.log('🔑 API key format looks correct, testing with OpenAI...');
     // Test the API key by making a simple call to OpenAI
     const { ChatOpenAI } = await import('@langchain/openai');
     
     const testLLM = new ChatOpenAI({
-      openAIApiKey: userApiKey,
-      modelName: 'gpt-3.5-turbo',
+      apiKey: userApiKey,
+      modelName: 'gpt-4o-mini',
       temperature: 0.7,
       maxTokens: 10,
     });
 
     // Make a test call with proper message format
-    await testLLM.invoke('test');
+    console.log('🔑 Making test call to OpenAI...');
+    const testResponse = await testLLM.invoke('Hello');
+    console.log('✅ OpenAI test call successful:', testResponse);
 
     res.json({
       success: true,
@@ -203,7 +215,13 @@ router.post('/test-api-key', async (req, res) => {
     });
 
   } catch (error: any) {
-    console.error('API key test error:', error);
+    console.error('❌ API key test error:', {
+      message: error.message,
+      status: error.status,
+      code: error.code,
+      type: error.constructor?.name,
+      stack: error.stack?.split('\n').slice(0, 3).join('\n'),
+    });
     
     if (error instanceof z.ZodError) {
       return res.status(400).json({
@@ -213,20 +231,51 @@ router.post('/test-api-key', async (req, res) => {
       });
     }
 
-    // Handle OpenAI API errors
-    if (error.message?.includes('API key') || 
-        error.message?.includes('OPENAI_API_KEY') ||
-        error.status === 401 || 
-        error.status === 403) {
+    // Handle specific OpenAI API errors
+    if (error.status === 401) {
       return res.status(400).json({
         success: false,
-        error: 'Invalid or unauthorized API key',
+        error: 'Invalid API key - authentication failed',
       });
     }
 
+    if (error.status === 403) {
+      return res.status(400).json({
+        success: false,
+        error: 'API key does not have required permissions',
+      });
+    }
+
+    if (error.status === 429) {
+      return res.status(400).json({
+        success: false,
+        error: 'API key rate limit exceeded',
+      });
+    }
+
+    if (error.code === 'insufficient_quota') {
+      return res.status(400).json({
+        success: false,
+        error: 'API key has insufficient quota or credits',
+      });
+    }
+
+    // Generic OpenAI API errors
+    if (error.message?.includes('API key') || 
+        error.message?.includes('OPENAI_API_KEY') ||
+        error.message?.includes('authentication')) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid or unauthorized API key',
+        details: error.message,
+      });
+    }
+
+    // Network or other errors
     res.status(500).json({
       success: false,
-      error: 'Failed to test API key',
+      error: 'Failed to test API key - please check your internet connection and try again',
+      details: error.message,
     });
   }
 });

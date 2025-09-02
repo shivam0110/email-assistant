@@ -41,9 +41,14 @@ class DocumentService {
 
   async processDocument(
     file: Express.Multer.File,
-    userId: string
+    userId: string,
+    userApiKey: string
   ): Promise<ProcessedDocument> {
     try {
+      if (!userApiKey) {
+        throw new Error('OpenAI API key is required for document processing. Please provide your API key.');
+      }
+
       let text: string;
       
       // Extract text based on file type
@@ -90,7 +95,7 @@ class DocumentService {
       }));
 
       // Store in vector database
-      await vectorStoreService.addDocuments(documents);
+      await vectorStoreService.addDocuments(documents, userApiKey);
 
       const processedDoc: ProcessedDocument = {
         id: documentId,
@@ -114,10 +119,11 @@ class DocumentService {
   async searchDocuments(
     query: string,
     userId: string,
+    userApiKey?: string,
     limit: number = 5
   ): Promise<Document[]> {
     try {
-      return await vectorStoreService.searchRelevantDocuments(query, userId, limit);
+      return await vectorStoreService.searchRelevantDocuments(query, userId, userApiKey, limit);
     } catch (error) {
       console.error('❌ Failed to search documents:', error);
       return [];
@@ -125,10 +131,15 @@ class DocumentService {
   }
 
   // Get list of uploaded documents for a user
-  async getDocumentList(userId: string): Promise<Partial<ProcessedDocument>[]> {
+  async getDocumentList(userId: string, userApiKey?: string): Promise<Partial<ProcessedDocument>[]> {
     try {
+      if (!userApiKey) {
+        console.log('🔍 No user API key provided for document list, returning empty results');
+        return [];
+      }
+      
       // This is a simplified version - in a real app you'd store document metadata separately
-      const docs = await vectorStoreService.searchRelevantDocuments('', userId, 100);
+      const docs = await vectorStoreService.searchRelevantDocuments('', userId, userApiKey, 100);
       
       // Group by document and get unique documents
       const documentMap = new Map();

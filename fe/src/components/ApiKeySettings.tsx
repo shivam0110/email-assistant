@@ -59,7 +59,7 @@ const ApiKeySettings: React.FC<ApiKeySettingsProps> = ({ isOpen, onClose, onApiK
       } else {
         localStorage.removeItem(API_KEY_STORAGE_KEY);
         onApiKeyChange(null);
-        setValidationMessage({ type: 'info', message: 'API key removed. Using system default.' });
+        setValidationMessage({ type: 'info', message: 'API key removed.' });
       }
     } catch (error) {
       console.error('Failed to save API key:', error);
@@ -73,7 +73,7 @@ const ApiKeySettings: React.FC<ApiKeySettingsProps> = ({ isOpen, onClose, onApiK
     setApiKey('');
     localStorage.removeItem(API_KEY_STORAGE_KEY);
     onApiKeyChange(null);
-    setValidationMessage({ type: 'info', message: 'API key removed. Using system default.' });
+    setValidationMessage({ type: 'info', message: 'API key removed.' });
   };
 
   const handleClose = () => {
@@ -107,16 +107,16 @@ const ApiKeySettings: React.FC<ApiKeySettingsProps> = ({ isOpen, onClose, onApiK
         {/* Content */}
         <div className="p-6 space-y-6">
           {/* Info Section */}
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+          <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
             <div className="flex items-start space-x-3">
-              <span className="text-blue-500 text-lg">ℹ️</span>
-              <div className="text-sm text-blue-800">
-                <p className="font-medium mb-2">Use Your Own OpenAI API Key</p>
-                <ul className="space-y-1 text-blue-700">
-                  <li>• Enter your OpenAI API key to use your own quota</li>
-                  <li>• Your key is stored securely in your browser</li>
-                  <li>• Leave empty to use the system default key</li>
-                  <li>• Get your API key from <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer" className="underline hover:text-blue-600">OpenAI Platform</a></li>
+              <span className="text-amber-500 text-lg">⚠️</span>
+              <div className="text-sm text-amber-800">
+                <p className="font-medium mb-2">OpenAI API Key Required</p>
+                <ul className="space-y-1 text-amber-700">
+                  <li>• An OpenAI API key is required to use chat, document upload, and email features</li>
+                  <li>• Your key is stored securely in your browser only</li>
+                  <li>• You control your own OpenAI usage and costs</li>
+                  <li>• Get your API key from <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer" className="underline hover:text-amber-600">OpenAI Platform</a></li>
                 </ul>
               </div>
             </div>

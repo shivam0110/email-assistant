@@ -13,6 +13,7 @@ const generateDraftSchema = z.object({
   tone: z.enum(['professional', 'casual', 'friendly']).optional().default('professional'),
   subjectHint: z.string().optional(),
   includeContext: z.boolean().optional().default(true),
+  userApiKey: z.string().min(1, 'OpenAI API key is required'),
 });
 
 const sendEmailSchema = z.object({
@@ -47,6 +48,7 @@ router.post('/draft', requireAuth(), async (req, res) => {
       tone: validatedData.tone,
       subjectHint: validatedData.subjectHint,
       includeContext: validatedData.includeContext,
+      userApiKey: validatedData.userApiKey,
     });
     
     res.json({
@@ -176,6 +178,7 @@ router.post('/draft-and-send', requireAuth(), async (req, res) => {
       tone: draftData.tone,
       subjectHint: draftData.subjectHint,
       includeContext: draftData.includeContext,
+      userApiKey: draftData.userApiKey,
     });
     
     // Get user's email from Clerk
@@ -276,12 +279,19 @@ router.post('/from-chat', requireAuth(), async (req, res) => {
       return res.status(401).json({ error: 'Unauthorized' });
     }
     const userId = auth.userId;
-    const { messages, tone } = req.body;
+    const { messages, tone, userApiKey } = req.body;
     
     if (!messages || !Array.isArray(messages)) {
       return res.status(400).json({
         success: false,
         error: 'Messages array is required',
+      });
+    }
+
+    if (!userApiKey) {
+      return res.status(400).json({
+        success: false,
+        error: 'OpenAI API key is required',
       });
     }
     
@@ -290,6 +300,7 @@ router.post('/from-chat', requireAuth(), async (req, res) => {
     const draft = await emailDraftService.generateFromChatContext(
       userId,
       messages,
+      userApiKey,
       tone || 'professional'
     );
     

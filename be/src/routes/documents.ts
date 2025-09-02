@@ -40,9 +40,17 @@ router.post('/upload', requireAuth(), upload.single('document'), async (req: Req
       });
     }
 
+    const { userApiKey } = req.body;
+    if (!userApiKey) {
+      return res.status(400).json({
+        success: false,
+        error: 'OpenAI API key is required for document processing',
+      });
+    }
+
     console.log(`📤 Processing document upload: ${req.file.originalname} for user: ${auth.userId}`);
 
-    const processedDocument = await documentService.processDocument(req.file, auth.userId);
+    const processedDocument = await documentService.processDocument(req.file, auth.userId, userApiKey);
 
     res.json({
       success: true,
@@ -65,6 +73,13 @@ router.post('/upload', requireAuth(), upload.single('document'), async (req: Req
       });
     }
 
+    if (error instanceof Error && error.message.includes('OpenAI API key')) {
+      return res.status(400).json({
+        success: false,
+        error: error.message,
+      });
+    }
+
     res.status(500).json({
       success: false,
       error: 'Failed to process document',
@@ -83,7 +98,15 @@ router.get('/list', requireAuth(), async (req: Request, res: Response) => {
       });
     }
 
-    const documents = await documentService.getDocumentList(auth.userId);
+    const { userApiKey } = req.query;
+    if (!userApiKey || typeof userApiKey !== 'string') {
+      return res.status(400).json({
+        success: false,
+        error: 'OpenAI API key is required',
+      });
+    }
+
+    const documents = await documentService.getDocumentList(auth.userId, userApiKey);
 
     res.json({
       success: true,
@@ -113,11 +136,12 @@ router.post('/search', requireAuth(), async (req: Request, res: Response) => {
     const searchSchema = z.object({
       query: z.string().min(1),
       limit: z.number().min(1).max(20).optional().default(5),
+      userApiKey: z.string().min(1, 'OpenAI API key is required'),
     });
 
-    const { query, limit } = searchSchema.parse(req.body);
+    const { query, limit, userApiKey } = searchSchema.parse(req.body);
 
-    const results = await documentService.searchDocuments(query, auth.userId, limit);
+    const results = await documentService.searchDocuments(query, auth.userId, userApiKey, limit);
 
     res.json({
       success: true,

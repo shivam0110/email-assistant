@@ -19,31 +19,19 @@ export interface ChatResponse {
 }
 
 class ChatService {
-  private llm: ChatOpenAI;
   private outputParser: StringOutputParser;
 
   constructor() {
-    // Use GPT-3.5-turbo for cost efficiency
-    // If no system API key is provided, we'll use a placeholder and require user keys
-    this.llm = new ChatOpenAI({
-      openAIApiKey: config.OPENAI_API_KEY || 'placeholder-key',
-      modelName: 'gpt-3.5-turbo',
-      temperature: 0.7,
-      maxTokens: 500, // Limit tokens for cost control
-    });
-    
     this.outputParser = new StringOutputParser();
   }
 
-  private createLLMWithKey(apiKey?: string): ChatOpenAI {
-    const effectiveApiKey = apiKey || config.OPENAI_API_KEY;
-    
-    if (!effectiveApiKey) {
+  private createLLMWithKey(apiKey: string): ChatOpenAI {
+    if (!apiKey) {
       throw new Error('OpenAI API key is required. Please provide your API key in settings.');
     }
 
     return new ChatOpenAI({
-      openAIApiKey: effectiveApiKey,
+      apiKey: apiKey,
       modelName: 'gpt-3.5-turbo',
       temperature: 0.7,
       maxTokens: 500,
@@ -52,6 +40,10 @@ class ChatService {
 
   async processChat(request: ChatRequest): Promise<ChatResponse> {
     try {
+      if (!request.userApiKey) {
+        throw new Error('OpenAI API key is required. Please provide your API key in settings.');
+      }
+
       // Create user message
       const userMessage = vectorStoreService.createChatMessage(
         'user',
@@ -61,8 +53,8 @@ class ChatService {
 
       // Search for relevant chat history and documents in parallel
       const [chatContext, relevantDocuments] = await Promise.all([
-        vectorStoreService.getChatContext(request.message, request.userId),
-        documentService.searchDocuments(request.message, request.userId, 3)
+        vectorStoreService.getChatContext(request.message, request.userId, request.userApiKey),
+        documentService.searchDocuments(request.message, request.userId, request.userApiKey, 3)
       ]);
 
       // Build hybrid context: recent messages + relevant history + documents
@@ -143,8 +135,8 @@ Instructions:
 
       // Store both messages in vector store asynchronously (fire-and-forget)
       // This will not block the response
-      vectorStoreService.addChatMessage(userMessage);
-      vectorStoreService.addChatMessage(assistantMessage);
+      vectorStoreService.addChatMessage(userMessage, request.userApiKey);
+      vectorStoreService.addChatMessage(assistantMessage, request.userApiKey);
 
       return {
         id: assistantMessage.id,
@@ -159,9 +151,14 @@ Instructions:
     }
   }
 
-  async getChatHistory(userId: string, query?: string): Promise<ChatMessage[]> {
+  async getChatHistory(userId: string, query?: string, userApiKey?: string): Promise<ChatMessage[]> {
     if (query) {
-      const relevantDocs = await vectorStoreService.searchRelevantHistory(query, userId, 10);
+      if (!userApiKey) {
+        console.log('🔍 No user API key provided for chat history search, returning recent messages only');
+        return vectorStoreService.getRecentMessages(userId);
+      }
+      
+      const relevantDocs = await vectorStoreService.searchRelevantHistory(query, userId, userApiKey, 10);
       return relevantDocs.map(doc => ({
         id: doc.metadata.id,
         role: doc.metadata.role,

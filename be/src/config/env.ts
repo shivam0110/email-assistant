@@ -4,7 +4,6 @@ const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   PORT: z.string().transform(Number).pipe(z.number().min(1000).max(65535)).default('4000'),
   CLIENT_ORIGIN: z.string().url().default('http://localhost:3000'),
-  OPENAI_API_KEY: z.string().optional(),
   CLERK_PUBLISHABLE_KEY: z.string().min(1, 'Clerk publishable key is required'),
   CLERK_SECRET_KEY: z.string().min(1, 'Clerk secret key is required'),
   NYLAS_CLIENT_ID: z.string().min(1, 'Nylas client ID is required'),

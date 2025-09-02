@@ -10,6 +10,7 @@ export interface DraftEmailRequest {
   tone?: 'professional' | 'casual' | 'friendly';
   subjectHint?: string;
   includeContext?: boolean;
+  userApiKey: string; // Make required
 }
 
 export interface GeneratedDraft {
@@ -20,14 +21,20 @@ export interface GeneratedDraft {
 }
 
 export class EmailDraftService {
-  private llm: ChatOpenAI;
-
   constructor() {
-    this.llm = new ChatOpenAI({
+    // No default LLM initialization - will create per request with user API key
+  }
+
+  private createLLMWithKey(apiKey: string): ChatOpenAI {
+    if (!apiKey) {
+      throw new Error('OpenAI API key is required. Please provide your API key in settings.');
+    }
+
+    return new ChatOpenAI({
+      apiKey: apiKey,
       modelName: 'gpt-3.5-turbo',
       temperature: 0.7,
       maxTokens: 1000,
-      openAIApiKey: config.OPENAI_API_KEY || 'placeholder-key',
     });
   }
 
@@ -37,6 +44,10 @@ export class EmailDraftService {
   async generateDraft(request: DraftEmailRequest): Promise<GeneratedDraft> {
     console.log(`🤖 Generating email draft for user: ${request.userId}`);
     
+    if (!request.userApiKey) {
+      throw new Error('OpenAI API key is required. Please provide your API key in settings.');
+    }
+    
     try {
       // Get relevant context if requested and available
       let relevantContext = '';
@@ -45,6 +56,7 @@ export class EmailDraftService {
           const similarMessages = await vectorStoreService.searchRelevantHistory(
             request.context,
             request.userId,
+            request.userApiKey,
             3 // Get top 3 relevant pieces of context
           );
           
@@ -60,7 +72,8 @@ export class EmailDraftService {
       }
 
       const prompt = this.buildEmailPrompt(request, relevantContext);
-      const response = await this.llm.invoke(prompt);
+      const llm = this.createLLMWithKey(request.userApiKey);
+      const response = await llm.invoke(prompt);
       
       const parsedDraft = this.parseEmailResponse(response.content as string, request);
       
@@ -155,7 +168,7 @@ Make sure the JSON is valid and the body includes proper paragraph breaks using 
   /**
    * Generate a quick draft from conversation context
    */
-  async generateFromChatContext(userId: string, chatMessages: string[], tone: 'professional' | 'casual' | 'friendly' = 'professional'): Promise<GeneratedDraft> {
+  async generateFromChatContext(userId: string, chatMessages: string[], userApiKey: string, tone: 'professional' | 'casual' | 'friendly' = 'professional'): Promise<GeneratedDraft> {
     const context = chatMessages.slice(-3).join('\n\n'); // Use last 3 messages
     
     return this.generateDraft({
@@ -163,6 +176,7 @@ Make sure the JSON is valid and the body includes proper paragraph breaks using 
       context: `Based on our conversation: ${context}`,
       tone,
       includeContext: true,
+      userApiKey,
     });
   }
 }
